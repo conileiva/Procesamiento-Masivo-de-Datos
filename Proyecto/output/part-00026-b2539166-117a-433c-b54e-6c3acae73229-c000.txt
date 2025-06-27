@@ -1,0 +1,2 @@
+Ventana 2018-10-10 19:27:00 es similar a 2018-06-09 18:05:00 con similitud: 0.91
+Ventana 2018-10-26 04:57:00 es similar a 2018-08-11 13:27:00 con similitud: 0.8835

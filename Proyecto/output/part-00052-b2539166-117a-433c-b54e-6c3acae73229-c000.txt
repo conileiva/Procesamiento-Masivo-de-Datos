@@ -1,0 +1,2 @@
+Ventana 2020-03-12 05:22:00 es similar a 2019-03-08 16:40:00 con similitud: 0.8936
+Ventana 2020-03-12 05:22:00 es similar a 2019-04-25 16:40:00 con similitud: 0.8514

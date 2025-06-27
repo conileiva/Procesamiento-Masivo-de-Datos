@@ -1,15 +1,19 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import to_timestamp, col
+import sys
 import math
 import time
 import statistics
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import to_timestamp, col, concat_ws, lit, round as spark_round
 
-# Parámetros
-CSV_PATH = "file:///data/2025/uhadoop/grupodematigodoy/bitcoin_2017_to_2023.csv"
-WINDOW_SIZE = 360  # 6 horas * 60 minutos
+# === PARÁMETROS ===
+CSV_PATH = "hdfs:///data/2025/uhadoop/grupodematigodoy/bitcoin_2017_to_2023.csv"
+OUTPUT_DIR = "file:///data/2025/uhadoop/grupodematigodoy/salida_cambios"
+WINDOW_SIZE = 360  # 6 horas
 BLOCK_SIZE = 10    # 10 minutos
+STEP_SIZE = 60     # solo para modo 2 (desplazamiento de 1 hora)
 SIMILARITY_THRESHOLD = 0.85
 
+# === SIMILITUD DEL COSENO ===
 def cosine_similarity(v1, v2):
     dot = sum(a * b for a, b in zip(v1, v2))
     norm1 = math.sqrt(sum(a * a for a in v1))
@@ -24,83 +28,78 @@ def compute_similarity(pair):
     return (ts_a, ts_b, sim)
 
 if __name__ == "__main__":
-    spark = SparkSession.builder.appName("BitcoinWindowSimilarityChangeStd").getOrCreate()
+    if len(sys.argv) != 2 or sys.argv[1] not in {"0", "1"}:
+        print("Uso: spark-submit script.py <modo>")
+        print("Modo 0: comparar todas las ventanas entre sí (como antes)")
+        print("Modo 1: comparar última ventana contra desplazamientos cada 60 min")
+        sys.exit(1)
+
+    mode = int(sys.argv[1])
+
+    spark = SparkSession.builder.appName("BitcoinSimilarityModes").getOrCreate()
     sc = spark.sparkContext
 
-    print("[INFO] Leyendo CSV...")
+    print("[INFO] Leyendo CSV desde HDFS...")
     df = spark.read.option("header", True).option("inferSchema", True).csv(CSV_PATH)
     df = df.filter(col("close").isNotNull()).orderBy(to_timestamp(col("timestamp")))
-    total_rows = df.count()
-    print(f"[INFO] Total filas: {total_rows}")
+    data_list = df.select("timestamp", "close").rdd.map(lambda row: (row[0], float(row[1]))).collect()
 
-    # Usar primera mitad de datos sin muestreo aleatorio
-    half_count = total_rows
-    df_sample = df.limit(half_count)
-    print(f"[INFO] Usando primera mitad: {half_count} filas")
+    def build_window_vec(start_idx):
+        block = data_list[start_idx:start_idx+WINDOW_SIZE]
+        if len(block) < WINDOW_SIZE:
+            return None
+        raw_values = [x[1] for x in block]
+        means = [statistics.mean(raw_values[i:i+BLOCK_SIZE])
+                 for i in range(0, WINDOW_SIZE, BLOCK_SIZE)]
+        changes = [(means[k+1] - means[k]) / means[k] for k in range(len(means)-1)]
+        return (block[0][0], changes)
 
-    print("[INFO] Colectando datos localmente...")
-    data_list = df_sample.select("timestamp", "close").rdd.map(lambda row: (row[0], float(row[1]))).collect()
+    if mode == 0:
+        print("[INFO] Modo 0: todas las ventanas comparadas entre sí")
+        windows = []
+        for i in range(0, len(data_list), WINDOW_SIZE):
+            w = build_window_vec(i)
+            if w:
+                windows.append(w)
 
-    print("[INFO] Creando ventanas fijas y calculando vectores de cambios y desviaciones...")
-    windows_change = []
-    windows_change_std = []
-
-    for i in range(0, len(data_list), WINDOW_SIZE):
-        block = data_list[i:i+WINDOW_SIZE]
-        if len(block) == WINDOW_SIZE:
-            timestamps = [x[0] for x in block]
-            raw_values = [x[1] for x in block]
-
-            means = []
-            stds = []
-            for j in range(0, WINDOW_SIZE, BLOCK_SIZE):
-                subblock = raw_values[j:j+BLOCK_SIZE]
-                if len(subblock) == BLOCK_SIZE:
-                    means.append(statistics.mean(subblock))
-                    stds.append(statistics.stdev(subblock))
-
-            changes = [
-                (means[k+1] - means[k]) / means[k]
-                for k in range(len(means)-1)
-            ]
-
-            # Vector solo con cambios porcentuales
-            windows_change.append((timestamps[0], changes))
-
-            # Vector combinado cambios + std
-            combined_vec = changes + stds
-            windows_change_std.append((timestamps[0], combined_vec))
-
-    print(f"[INFO] Total ventanas creadas: {len(windows_change)}")
-
-    # Paralelizar y asignar índice
-    rdd_change = sc.parallelize(windows_change).zipWithIndex().map(lambda x: (x[1], x[0]))
-    rdd_change_std = sc.parallelize(windows_change_std).zipWithIndex().map(lambda x: (x[1], x[0]))
-
-    def process_similarity(rdd, output_file):
-        print(f"[INFO] Calculando similitudes para {output_file} ...")
-        start_time = time.time()
-
+        rdd = sc.parallelize(windows).zipWithIndex().map(lambda x: (x[1], x[0]))
         joined = rdd.cartesian(rdd).filter(lambda x: x[0][0] > x[1][0])
-        all_similarities = joined.map(compute_similarity).cache()
+        similarities = joined.map(compute_similarity)
+        similar_filtered = similarities.filter(lambda x: x[2] >= SIMILARITY_THRESHOLD)
 
-        top_10 = all_similarities.takeOrdered(10, key=lambda x: -x[2])
-        print(f"\n📊 Top 10 similitudes ({output_file}):")
-        for s in top_10:
-            print(f"Ventana {s[0]} ↔ {s[1]} → Similitud: {s[2]:.4f}")
+    else:
+        print("[INFO] Modo 1: última ventana vs ventanas desplazadas cada 60 minutos")
+        last_window = build_window_vec(len(data_list) - WINDOW_SIZE)
+        if last_window is None:
+            print("[ERROR] No se pudo construir la última ventana")
+            sys.exit(1)
 
-        similar = all_similarities.filter(lambda x: x[2] >= SIMILARITY_THRESHOLD).collect()
-        elapsed = time.time() - start_time
-        print(f"[INFO] Similitudes calculadas en {elapsed:.2f} segundos.")
-        print(f"[INFO] Ventanas similares encontradas sobre umbral ({SIMILARITY_THRESHOLD}): {len(similar)}")
+        base_vec = last_window[1]
+        target_windows = []
+        for i in range(0, len(data_list) - WINDOW_SIZE, STEP_SIZE):
+            w = build_window_vec(i)
+            if w:
+                target_windows.append(w)
 
-        with open(output_file, "w") as f:
-            for s in similar:
-                f.write(f"Ventana {s[0]} es similar a {s[1]} con similitud {s[2]:.4f}\n")
-        print(f"[INFO] Resultados guardados en {output_file}")
+        print(f"[INFO] Ventanas objetivo: {len(target_windows)}")
+        rdd = sc.parallelize(target_windows)
+        base_broadcast = sc.broadcast(base_vec)
 
-    # Ejecutar para ambos
-    process_similarity(rdd_change, "/data/2025/uhadoop/grupodematigodoy/salida_cambios.txt")
-    process_similarity(rdd_change_std, "/data/2025/uhadoop/grupodematigodoy/salida_cambios_std.txt")
+        similarities = rdd.map(lambda x: (last_window[0], x[0], cosine_similarity(base_broadcast.value, x[1])))
+        similar_filtered = similarities.sortBy(lambda x: -x[2]).zipWithIndex().filter(lambda x: x[1] < 10).map(lambda x: x[0])
+
+    similar_df = similar_filtered.map(lambda x: (x[0], x[1], x[2])).toDF(["start_time_a", "start_time_b", "similarity"])
+
+    similar_df = similar_df.withColumn(
+        "result",
+        concat_ws(" ",
+            lit("Ventana"), col("start_time_a"),
+            lit("es similar a"), col("start_time_b"),
+            lit("con similitud:"), spark_round(col("similarity"), 4))
+    ).select("result")
+
+    print("[INFO] Guardando resultados en carpeta local...")
+    similar_df.write.mode("overwrite").text(OUTPUT_DIR)
+    print(f"[INFO] Resultados guardados en {OUTPUT_DIR}")
 
     spark.stop()

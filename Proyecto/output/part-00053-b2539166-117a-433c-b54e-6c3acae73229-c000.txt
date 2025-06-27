@@ -1,0 +1,4 @@
+Ventana 2019-12-16 16:04:00 es similar a 2019-10-13 17:41:00 con similitud: 0.8678
+Ventana 2020-01-03 02:20:00 es similar a 2019-09-19 17:41:00 con similitud: 0.8692
+Ventana 2020-02-19 21:14:00 es similar a 2019-07-09 09:41:00 con similitud: 0.9202
+Ventana 2020-02-19 21:14:00 es similar a 2019-08-28 17:41:00 con similitud: 0.8734

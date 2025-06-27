@@ -1,0 +1,10 @@
+Ventana 2023-08-01 07:20:00 es similar a 2018-06-27 08:05:00 con similitud: 0.736
+Ventana 2023-08-01 07:20:00 es similar a 2021-12-10 19:13:00 con similitud: 0.6564
+Ventana 2023-08-01 07:20:00 es similar a 2019-08-01 01:41:00 con similitud: 0.6457
+Ventana 2023-08-01 07:20:00 es similar a 2017-12-09 12:47:00 con similitud: 0.636
+Ventana 2023-08-01 07:20:00 es similar a 2018-12-05 23:57:00 con similitud: 0.6339
+Ventana 2023-08-01 07:20:00 es similar a 2023-03-12 10:00:00 con similitud: 0.6321
+Ventana 2023-08-01 07:20:00 es similar a 2019-02-24 04:40:00 con similitud: 0.6232
+Ventana 2023-08-01 07:20:00 es similar a 2017-11-23 18:59:00 con similitud: 0.6192
+Ventana 2023-08-01 07:20:00 es similar a 2018-12-04 00:57:00 con similitud: 0.6164
+Ventana 2023-08-01 07:20:00 es similar a 2019-09-24 14:41:00 con similitud: 0.6155
