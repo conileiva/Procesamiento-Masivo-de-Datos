@@ -20,3 +20,20 @@ Los resultados de las comparaciones se encuentran en dos carpetas:
 Los gráficos resultantes de las comparaciones se encuentran en dos carpetas:
 - plots_similares0/ — Contiene los gráficos correspondientes a las comparaciones de todas las ventanas entre sí (modo 0)
 - plots_similares/ — Contiene los gráficos correspondientes a las comparaciones de la última ventana contra ventanas anteriores (modo 1).
+
+# Ejecución
+
+Para ejecutar las alertas se usan los siguientes comandos:
+
+## Para producer/consumer
+
+```java -cp Bitcoin.jar org.mdp.kafka.cli.BitcoinPriceAlert <topic> <speedup>```
+
+```java -cp Bitcoin.jar org.mdp.kafka.cli.BitcoinAlertConsumer <topic> <tamaño de ventana> <threshold>``` 
+
+## Para similitud de comportamientos
+
+```Proyecto.py <modo>``` 
+
+con modo siendo 0 o 1 dependiendo el modo que se quiera ejecutar.
+
